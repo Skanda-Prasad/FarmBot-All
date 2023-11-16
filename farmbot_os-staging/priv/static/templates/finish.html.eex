@@ -1,0 +1,25 @@
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Configuration Complete </title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+
+  <body>
+    <h1>Configuration Complete</h1>
+    <h2><%= subtitle %></h2>
+
+    <div class="widget">
+    <div class="widget-content bare">
+      FarmBot will now reboot to apply the configuration.
+      <p>
+        If FarmBot is unable to connect to the Internet or if any
+        configuration settings are incorrect, FarmBot will reset in 5
+        minutes, allowing you to enter the settings again. You may now close
+        this window and connect to your normal WiFi network.
+      </p>
+    </div>
+  </div>
+  </body>
+</html>

@@ -1,0 +1,390 @@
+version: 2.0
+defaults: &defaults
+  working_directory: /nerves/build
+  docker:
+    - image: ghcr.io/nerves-project/nerves_system_br:1.23.2
+
+install_elixir: &install_elixir
+  run:
+    name: Install Elixir
+    command: |
+      wget https://repo.hex.pm/builds/elixir/v1.15.4-otp-26.zip
+      unzip -d /usr/local/elixir v1.15.4-otp-26.zip
+      echo 'export PATH=/usr/local/elixir/bin:$PATH' >> $BASH_ENV
+
+install_hex_archives: &install_hex_archives
+  run:
+    name: Install archives
+    command: |
+      cd /tmp
+      mix local.hex --force
+      mix local.rebar --force
+      mix archive.install hex nerves_bootstrap "~> 1.11" --force
+
+install_ghr: &install_ghr
+  run:
+    name: Install ghr (Github Releases)
+    command: |
+      wget https://github.com/tcnksm/ghr/releases/download/v0.9.0/ghr_v0.9.0_linux_amd64.tar.gz
+      tar xf ghr_v0.9.0_linux_amd64.tar.gz
+      ln -sf ghr_v0.9.0_linux_amd64/ghr .
+
+install_jq: &install_jq
+  run:
+    name: Install jq
+    command: |
+      wget https://github.com/stedolan/jq/releases/download/jq-1.5/jq-linux64
+      chmod +x ./jq-linux64
+      mv ./jq-linux64 /usr/bin/jq
+
+install_libnl: &install_libnl
+  run:
+    name: Install libnl
+    command: |
+      apt-get update
+      apt-get install pkg-config libnl-genl-3-dev -y
+
+install_mdl: &install_mdl
+  run:
+    name: Install Ruby / mdl
+    command: |
+      apt-get update
+      apt-get install ruby -y
+      gem install mdl
+
+steps_to_build_cached_firmware: &steps_to_build_cached_firmware
+  steps:
+    - checkout
+    - run: git submodule update --init --recursive
+    - run:
+        name: Setup ENV
+        command: |
+          echo "$MIX_TARGET" > MIX_TARGET
+          echo "$MIX_ENV" > MIX_ENV
+    - restore_cache:
+        key: v14-fbos-{{ checksum "MIX_TARGET" }}-{{ checksum "MIX_ENV" }}-dependency-cache-{{ checksum "mix.lock" }}
+    - restore_cache:
+        key: v14-fbos-host-test-dependency-cache-{{ checksum "mix.lock" }}
+    - <<: *install_elixir
+    - <<: *install_hex_archives
+    - <<: *install_libnl
+    - run:
+        name: Build Farmbot OS Firmware
+        working_directory: /nerves/build
+        command: |
+          mix deps.get
+          mix compile --force
+          mix firmware
+    - run:
+        name: Create artifact dir
+        command: mkdir -p /nerves/deploy/system/artifacts
+    - run:
+        name: Create artifacts
+        command: |
+          cp /nerves/build/_build/${MIX_TARGET}/${MIX_TARGET}_${MIX_ENV}/nerves/images/farmbot.fw /nerves/deploy/system/artifacts/farmbot-${MIX_TARGET}-$(cat VERSION).fw
+    - save_cache:
+        key: v14-fbos-{{ checksum "MIX_TARGET" }}-{{ checksum "MIX_ENV" }}-dependency-cache-{{ checksum "mix.lock" }}
+        paths:
+          - /nerves/build/_build/
+          - /nerves/build/deps/
+          - ~/.nerves/
+    - save_cache:
+        key: nerves/deploy/system-{{ checksum "MIX_TARGET" }}-{{ .Branch }}-{{ .Revision }}-{{ .Environment.CIRCLE_TAG }}
+        paths:
+          - "/nerves/deploy/system"
+
+steps_to_build_fresh_firmware: &steps_to_build_fresh_firmware
+  steps:
+    - checkout
+    - run: git submodule update --init --recursive
+    - run:
+        name: Setup ENV
+        command: |
+          echo "$MIX_TARGET" > MIX_TARGET
+          echo "$MIX_ENV" > MIX_ENV
+    - <<: *install_elixir
+    - <<: *install_hex_archives
+    - <<: *install_libnl
+    - run:
+        name: Build Farmbot OS Firmware
+        working_directory: /nerves/build
+        command: |
+          mix deps.get
+          mix compile --force
+          mix firmware
+    - run:
+        name: Create artifact dir
+        command: mkdir -p /nerves/deploy/system/artifacts
+    - run:
+        name: Create artifacts
+        command: |
+          cp /nerves/build/_build/${MIX_TARGET}/${MIX_TARGET}_${MIX_ENV}/nerves/images/farmbot.fw /nerves/deploy/system/artifacts/farmbot-${MIX_TARGET}-$(cat VERSION).fw
+    - save_cache:
+        key: v14-fbos-{{ checksum "MIX_TARGET" }}-{{ checksum "MIX_ENV" }}-dependency-cache-{{ checksum "mix.lock" }}
+        paths:
+          - /nerves/build/_build/
+          - /nerves/build/deps/
+          - ~/.nerves/
+    - save_cache:
+        key: nerves/deploy/system-{{ checksum "MIX_TARGET" }}-{{ .Branch }}-{{ .Revision }}-{{ .Environment.CIRCLE_TAG }}
+        paths:
+          - "/nerves/deploy/system"
+
+predeploy_setup: &predeploy_setup
+  steps:
+    - checkout
+    - run: git submodule update --init --recursive
+    - run:
+        name: Setup ENV
+        command: |
+          echo "$MIX_TARGET" > MIX_TARGET
+          echo "$MIX_ENV" > MIX_ENV
+    - restore_cache:
+        key: v14-fbos-{{ checksum "MIX_TARGET" }}-{{ checksum "MIX_ENV" }}-dependency-cache-{{ checksum "mix.lock" }}
+    - restore_cache:
+        key: nerves/deploy/system-{{ checksum "MIX_TARGET" }}-{{ .Branch }}-{{ .Revision }}-{{ .Environment.CIRCLE_TAG }}
+    - <<: *install_elixir
+    - <<: *install_hex_archives
+    - <<: *install_jq
+
+install_lua_test_env: &install_lua_test_env
+  run:
+    name: Install Lua test env
+    command: |
+      apt-get update
+      apt-get install luarocks -y
+      luarocks install inspect
+      luarocks install luacov
+      luarocks install busted
+
+run_lua_tests: &run_lua_tests
+  run:
+    name: Test Lua code
+    command: |
+      cd priv/lua
+      busted --coverage
+      luacov
+      cat luacov.report.out
+    when: always
+
+jobs:
+  ################################################################################
+  #                                    TEST                                      #
+  ################################################################################
+  test_farmbot_os:
+    <<: *defaults
+    environment:
+      MIX_ENV: test
+      MIX_TARGET: host
+      NERVES_LOG_DISABLE_PROGRESS_BAR: "yes"
+      ELIXIR_VERSION: 1.15.4
+    steps:
+      - checkout
+      - run: git submodule update --init --recursive
+      - restore_cache:
+          keys:
+            - v14-fbos-host-test-dependency-cache-{{ checksum "mix.lock" }}
+      - <<: *install_elixir
+      - <<: *install_hex_archives
+      - <<: *install_lua_test_env
+      - run:
+          name: Test Farmbot OS
+          working_directory: /nerves/build
+          command: |
+            mix deps.get
+            mix compile
+            mix format --check-formatted
+            mix coveralls.json
+            bash <(curl -s https://codecov.io/bash)
+      - <<: *run_lua_tests
+      - save_cache:
+          key: v14-fbos-host-test-dependency-cache-{{ checksum "mix.lock" }}
+          paths:
+            - farmbot_os/_build/host
+            - farmbot_os/deps/host
+      - save_cache:
+          key: v14-fbos-coverage-cache-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - cover
+      - store_artifacts:
+          path: cover
+
+  ################################################################################
+  #                           Build the targets
+  ################################################################################
+
+  build_rpi4_prod:
+    <<: *defaults
+    environment:
+      MIX_TARGET: rpi4
+      MIX_ENV: prod
+    <<: *steps_to_build_cached_firmware
+
+  build_rpi3_prod:
+    <<: *defaults
+    environment:
+      MIX_TARGET: rpi3
+      MIX_ENV: prod
+    <<: *steps_to_build_cached_firmware
+
+  build_rpi_prod:
+    <<: *defaults
+    environment:
+      MIX_TARGET: rpi
+      MIX_ENV: prod
+    <<: *steps_to_build_cached_firmware
+
+  build_fresh_rpi4:
+    <<: *defaults
+    environment:
+      MIX_TARGET: rpi4
+      MIX_ENV: prod
+    <<: *steps_to_build_fresh_firmware
+
+  build_fresh_rpi3:
+    <<: *defaults
+    environment:
+      MIX_TARGET: rpi3
+      MIX_ENV: prod
+    <<: *steps_to_build_fresh_firmware
+
+  build_fresh_rpi:
+    <<: *defaults
+    environment:
+      MIX_TARGET: rpi
+      MIX_ENV: prod
+    <<: *steps_to_build_fresh_firmware
+
+  ################################################################################
+  #                    Release Targets
+  ################################################################################
+
+  predeploy_rpi4:
+    <<: *defaults
+    environment:
+      MIX_TARGET: rpi4
+      MIX_ENV: prod
+    <<: *predeploy_setup
+
+  predeploy_rpi3:
+    <<: *defaults
+    environment:
+      MIX_TARGET: rpi3
+      MIX_ENV: prod
+    <<: *predeploy_setup
+
+  predeploy_rpi:
+    <<: *defaults
+    environment:
+      MIX_TARGET: rpi
+      MIX_ENV: prod
+    <<: *predeploy_setup
+
+  ################################################################################
+  #               TARGET FIRMWARE NERVES GITHUB RELEASE main                   #
+  ################################################################################
+
+  release_to_github:
+    <<: *defaults
+    environment:
+      MIX_ENV: prod
+      ELIXIR_VERSION: 1.15.4
+    steps:
+      - checkout
+      - run:
+          name: Setup ENV
+          command: |
+            echo rpi4 > MIX_TARGET_RPI4
+            echo rpi3 > MIX_TARGET_RPI3
+            echo rpi > MIX_TARGET_RPI
+            echo $MIX_ENV > MIX_ENV
+      - restore_cache:
+          key: nerves/deploy/system-{{ checksum "MIX_TARGET_RPI4" }}-{{ .Branch }}-{{ .Revision }}-{{ .Environment.CIRCLE_TAG }}
+      - restore_cache:
+          key: nerves/deploy/system-{{ checksum "MIX_TARGET_RPI3" }}-{{ .Branch }}-{{ .Revision }}-{{ .Environment.CIRCLE_TAG }}
+      - restore_cache:
+          key: nerves/deploy/system-{{ checksum "MIX_TARGET_RPI" }}-{{ .Branch }}-{{ .Revision }}-{{ .Environment.CIRCLE_TAG }}
+      - <<: *install_elixir
+      - <<: *install_hex_archives
+      - <<: *install_ghr
+      - add_ssh_keys:
+          fingerprints:
+            - "97:92:32:5d:d7:96:e1:fa:f3:6b:f3:bd:d6:aa:84:c6"
+      - run: echo $FWUP_KEY_BASE64 | base64 --decode --ignore-garbage > $NERVES_FW_PRIV_KEY
+      - run:
+          name: Sign rpi4 Firmware and create image
+          command: |
+            mv /nerves/deploy/system/artifacts/farmbot-rpi4-$(cat VERSION).fw /tmp/farmbot-rpi4-$(cat VERSION).fw
+            fwup -S -s $NERVES_FW_PRIV_KEY -i /tmp/farmbot-rpi4-$(cat VERSION).fw -o /nerves/deploy/system/artifacts/farmbot-rpi4-$(cat VERSION).fw
+            fwup -a -t complete -i /nerves/deploy/system/artifacts/farmbot-rpi4-$(cat VERSION).fw -d /nerves/deploy/system/artifacts/farmbot-rpi4-$(cat VERSION).img
+            sha256sum /nerves/deploy/system/artifacts/farmbot-rpi4-$(cat VERSION).img > /nerves/deploy/system/artifacts/farmbot-rpi4-$(cat VERSION).sha256
+      - run:
+          name: Sign rpi3 Firmware and create image
+          command: |
+            mv /nerves/deploy/system/artifacts/farmbot-rpi3-$(cat VERSION).fw /tmp/farmbot-rpi3-$(cat VERSION).fw
+            fwup -S -s $NERVES_FW_PRIV_KEY -i /tmp/farmbot-rpi3-$(cat VERSION).fw -o /nerves/deploy/system/artifacts/farmbot-rpi3-$(cat VERSION).fw
+            fwup -a -t complete -i /nerves/deploy/system/artifacts/farmbot-rpi3-$(cat VERSION).fw -d /nerves/deploy/system/artifacts/farmbot-rpi3-$(cat VERSION).img
+            sha256sum /nerves/deploy/system/artifacts/farmbot-rpi3-$(cat VERSION).img > /nerves/deploy/system/artifacts/farmbot-rpi3-$(cat VERSION).sha256
+      - run:
+          name: Sign rpi Firmware and create image
+          command: |
+            mv /nerves/deploy/system/artifacts/farmbot-rpi-$(cat VERSION).fw /tmp/farmbot-rpi-$(cat VERSION).fw
+            fwup -S -s $NERVES_FW_PRIV_KEY -i /tmp/farmbot-rpi-$(cat VERSION).fw -o /nerves/deploy/system/artifacts/farmbot-rpi-$(cat VERSION).fw
+            fwup -a -t complete -i /nerves/deploy/system/artifacts/farmbot-rpi-$(cat VERSION).fw -d /nerves/deploy/system/artifacts/farmbot-rpi-$(cat VERSION).img
+            sha256sum /nerves/deploy/system/artifacts/farmbot-rpi-$(cat VERSION).img > /nerves/deploy/system/artifacts/farmbot-rpi-$(cat VERSION).sha256
+      - run:
+          name: Publish Github Release
+          command: ./ghr -t $GITHUB_TOKEN -u farmbot -r farmbot_os -recreate -prerelease -draft -delete -b "$(cat RELEASE_NOTES)" -c $(git rev-parse --verify HEAD) "v$(cat VERSION)" /nerves/deploy/system/artifacts
+
+workflows:
+  version: 2
+  test:
+    jobs:
+      - test_farmbot_os:
+          context: org-global
+          filters:
+            branches:
+              ignore:
+                - main
+  # main branch to my.farmbot.io
+  create_github_release:
+    jobs:
+      - build_fresh_rpi4:
+          context: org-global
+          filters:
+            branches:
+              only:
+                - main
+                - /^qa\/.*/
+      - build_fresh_rpi3:
+          context: org-global
+          filters:
+            branches:
+              only:
+                - main
+                - /^qa\/.*/
+      - build_fresh_rpi:
+          context: org-global
+          filters:
+            branches:
+              only:
+                - main
+                - /^qa\/.*/
+      - predeploy_rpi4:
+          context: org-global
+          requires:
+            - build_fresh_rpi4
+      - predeploy_rpi3:
+          context: org-global
+          requires:
+            - build_fresh_rpi3
+      - predeploy_rpi:
+          context: org-global
+          requires:
+            - build_fresh_rpi
+      - release_to_github:
+          context: org-global
+          requires:
+            - build_fresh_rpi4
+            - build_fresh_rpi3
+            - build_fresh_rpi

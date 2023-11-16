@@ -1,0 +1,11 @@
+defaults: &defaults
+  adapter: postgresql
+  min_messages: ERROR
+
+development:
+  <<: *defaults
+  database: farmbot_development
+
+test:
+  <<: *defaults
+  database: farmbot_test

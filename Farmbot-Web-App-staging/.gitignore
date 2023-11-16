@@ -1,0 +1,33 @@
+.cache
+.parcel-cache
+.env
+.idea
+.vscode
+*.log
+*.pem
+passenger.*.pid
+*.tsbuildinfo
+*.pid.lock
+*scratchpad*
+/config/master.key
+api_docs.md
+config/credentials.yml.enc
+coverage_api
+coverage_fe
+docker_volumes
+erd_diagram.png
+erd.pdf
+latest_corpus.ts
+log/
+node_modules
+package-lock.json
+public/assets/
+public/direct_upload/temp/*.jpg
+public/dist
+# ActiveStorage blobs:
+storage/*
+tmp
+
+# === Legacy
+# v13 upgrade creates a DB backup as dump.sql:
+dump.sql

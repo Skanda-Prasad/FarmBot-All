@@ -1,0 +1,56 @@
+<script>
+  function toggleAdvancedSettings() {
+    var advanced = document.getElementById("advancedSettings");
+    advanced.hidden = !advanced.hidden
+    document.getElementById("advancedSettingsTitle").className =
+        advanced.hidden ? "expandable" : "expanded"
+  }
+
+  function ipv4_methodChange() {
+    var static = document.getElementById("ipv4_method").value == "static";
+    document.getElementById("ipv4_settings").hidden = !static;
+  }
+</script>
+
+<div>
+  <label id="advancedSettingsTitle" class="expandable" for="advancedSettings"
+    onclick="toggleAdvancedSettings()">Advanced</label>
+  <fieldset id="advancedSettings" hidden>
+
+    <label for="regulatory_domain"> regulatory domain </label>
+    <input type="text" id="regulatory_domain" name="regulatory_domain" value="US">
+
+    <label for="dns_name"> Domain for verifying DNS (eg: "my.farm.bot")</label>
+    <input type="text" id="dns_name" name="dns_name" value="">
+
+    <label for="ntp_server_1"> NTP Pool Server 1 </label>
+    <input type="text" id="ntp_server_1" name=ntp_server_1 value="">
+
+    <label for="ntp_server_2"> NTP Pool Server 2 </label>
+    <input type="text" id="ntp_server_2" name=ntp_server_2 value="">
+
+    <label for="domain"> Domain </label>
+    <input type="text" name="domain" id="domain" value="">
+
+    <label for="name_servers"> NameServers </label>
+    <input type="text" name="name_servers" id="name_servers" value="">
+
+    <label for="ipv4_method"> IP Method </label>
+    <select name="ipv4_method" id="ipv4_method" value="dhcp" onchange="ipv4_methodChange()">
+      <option> dhcp </option>
+      <option> static </option>
+    </select>
+
+    <div id="ipv4_settings" hidden>
+      <label for="ipv4_address"> IP Address </label>
+      <input type="text" id="ipv4_address" name="ipv4_address" value="0.0.0.0">
+
+      <label for="ipv4_subnet_mask"> IP Subnet Mask </label>
+      <input type="text" id="ipv4_subnet_mask" name="ipv4_subnet_mask" value="255.255.0.0">
+
+      <label for="ipv4_gateway"> IP Gateway </label>
+      <input type="text" id="ipv4_gateway" name="ipv4_gateway" value="0.0.0.0">
+    </div>
+
+  </fieldset>
+</div>

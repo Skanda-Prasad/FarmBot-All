@@ -1,4 +1,8 @@
 # FarmBot-All
-Web App - Standard Web App used by FarmBot
-OS - OS for Raspberry Pi to run FarmBot
+Web App - Standard Web App used by FarmBot.
+
+OS - OS for Raspberry Pi to run FarmBot.
+
 Arduino Firmware - Custom Arduino firmware, modifications of the original code.
+
+RPI Base Nerves - Standard code from the Nerves Project.
